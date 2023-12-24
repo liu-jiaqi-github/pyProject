@@ -1,0 +1,1874 @@
+psql -U idss -d bdlh -h x86bdlh01
+
+
+create or replace function idss_grkhbq_result_jg()
+returns int as $$
+
+declare
+        strSQL text:='';
+        rowcount int;
+        poc_run_start_time timestamp;
+        poc_run_end_time  timestamp;
+        poc_total_time text;
+        poc_stepstart_time timestamp;
+        poc_stepend_time timestamp;
+        poc_steptotal_time text;
+	    DATA_MONTH_1 varchar(10);  ----------当前入参日期的前1个月底
+	    DATA_MONTH_2 varchar(10);  ----------当前入参日期的前2个月底
+        DATA_MONTH_3 varchar(10);  ----------当前入参日期的前3个月底
+        DATA_MONTH_4 varchar(10);  ----------当前入参日期的前4个月底
+        DATA_MONTH_5 varchar(10);  ----------当前入参日期的前5个月底
+        DATA_MONTH_6 varchar(10);  ----------当前入参日期的前6个月底
+        DATA_MONTH_12 varchar(10);  ----------当前入参日期的前12个月底
+		DATA_MONTH_24 varchar(10);  ----------当前入参日期的前12个月底
+
+        data_dt varchar(10) ; -- 当前日期
+
+	--数据文件导出根路径
+	overwrite_path text :='/home/oushu/all_flow/idss/output/idss.db';
+begin
+        set client_min_messages=warning;
+        select timeofday()::timestamp into poc_run_start_time;
+        --select etl_date into  data_dt from dwh.m_work_date where sys_type = 'idss';
+        data_dt := '20230331';
+		         select to_char((to_date (data_dt,'yyyymmdd') - interval '1month'), 'yyyymmdd')  into DATA_MONTH_1;
+                 select to_char((to_date (data_dt,'yyyymmdd') - interval '2month'), 'yyyymmdd')  into DATA_MONTH_2;
+                 select to_char((to_date (data_dt,'yyyymmdd') - interval '3month'), 'yyyymmdd')  into DATA_MONTH_3;
+                 select to_char((to_date (data_dt,'yyyymmdd') - interval '4month'), 'yyyymmdd')  into DATA_MONTH_4;
+                 select to_char((to_date (data_dt,'yyyymmdd') - interval '5month'), 'yyyymmdd')  into DATA_MONTH_5;
+                 select to_char((to_date (data_dt,'yyyymmdd') - interval '6month'), 'yyyymmdd')  into DATA_MONTH_6;
+                 select to_char((to_date (data_dt,'yyyymmdd') - interval '12month'),'yyyymmdd')  into DATA_MONTH_12;
+                 select to_char((to_date (data_dt,'yyyymmdd') - interval '24month'),'yyyymmdd')  into DATA_MONTH_24;
+
+        select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'TRUNCATE TABLE idss.temp_first_ckzh';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 1;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 1,poc_steptotal_time ;
+
+
+	    select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'TRUNCATE TABLE idss.ckzh_new_all';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 2;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 2,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'insert  into idss.temp_first_ckzh
+		select
+		a1.ZHANGHAO,
+		a1.CHAPBHAO,
+		a1.KEHUHAOO,
+		a1.CUNQIIII,
+		a1.KAIHRIQI,
+		a1.kaihjine,
+		a1.XIOHRIQI,
+		a2.Crn_Exec_Int_Rate,
+		a3.cunrzxje,
+		'''||data_dt||''' as prof_date
+		from ( select ZHANGHAO,CHAPBHAO,KEHUHAOO,CUNQIIII,KAIHRIQI,XIOHRIQI,kaihjine
+		from   dwh.D_cbs_KDPA_ZHXINX
+		where  SUOSHUDX in (''1'' ,''2'') and partition_dt='''||data_dt||'''
+		)a1
+		left join
+		(
+		select Lby_Acc_No,Crn_Exec_Int_Rate from dwh.M_DEP_INT_RATE_TBL where partition_dt='''||data_dt||'''
+		)a2   on a1.ZHANGHAO=a2.Lby_Acc_No
+		left join
+		(
+		select c.chapbhao,c.cunrzxje
+		from
+		(
+		select chapbhao,cunrzxje,
+		row_number() over (partition by chapbhao order by weihriqi desc) as rn
+		from dwh.d_cbs_kdpf_cunrkz
+		where partition_dt='''||data_dt||'''
+		)c
+		where c.rn=1
+		)a3  on a1.CHAPBHAO=a3.chapbhao';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 3;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 3,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'insert into  idss.ckzh_new_all
+		select a.ledger_acct_no, a.cust_no,
+		(case when open_date is null OR prof_date is null then null
+                 else months_between(to_date(prof_date,'yyyyMMdd'),to_date(open_date,''yyyyMMdd''))
+        end ),
+		a.dedln,
+		a.prodct_no,
+		a.intf,
+		case when a.orig_amt is null then ''0'' else a.orig_amt end,
+		case when a.cancel_ddate<>'''' then ''0'' else  '1' end,
+		(case when a.cancel_ddate is null OR a.prof_date is null then null
+		when to_date(a.cancel_ddate,'yyyyMMdd')>=to_date(a.prof_date,''yyyyMMdd'')  then 0
+		else months_between(to_date(a.prof_date,'yyyyMMdd'),to_date(a.cancel_ddate,'yyyyMMdd'))
+        end )
+		from idss.temp_first_ckzh a';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 4;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 4,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.result_khsc';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 5;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 5,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.result_khsc as
+		select a.*, case
+		 when LSvOPRvZHXXvOpeInMon is null then ''0''
+		 when LSvOPRvZHXXvOpeInMon > 99999999990 then ''0''
+		 when LSvOPRvZHXXvOpeInMon <0 then ''0'' else LSvOPRvZHXXvOpeInMon end as BL_1
+		from (select cust_no from idss.temp_first_ckzh group by cust_no)a
+		left join (select cust_no, MAX(LSvOPRvZHXXvOpeInMon) as LSvOPRvZHXXvOpeInMon from idss.ckzh_new_all
+		where LSvFLGvZHXXvACT=1 AND LSvOPRvZHXXvOpeInMon is not null group by cust_no) b on a.cust_no=b.cust_no';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 6;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 6,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'TRUNCATE TABLE  idss.temp_ls_new_1mon';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 7;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 7,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'insert into  idss.temp_ls_new_1mon
+		select
+			  a1.ZHANGHAO
+			 ,a1.zhhuzwmc
+			 ,a1.GUIYLIUS
+			 ,a1.duifkhzh
+			 ,a1.duifminc
+			 ,a2.cust_no
+			 ,a1.CHAPBHAO
+			 ,a1.JIAOYIRQ
+			 ,a1.JIAOYIJE
+			 ,a1.JIAOYBIZ
+			 ,''0''
+			 ,a1.NBJOYIMA
+			 ,a1.QDAOLEIX
+			 ,a2.intf
+			 ,a2.dedln
+			 ,a1.JIEDAIBZ
+			 ,a2.open_date
+			 ,a2.prof_date
+			 ,a2.orig_amt
+		from
+			 (select ZHANGHAO,zhhuzwmc,GUIYLIUS,duifkhzh,duifminc,CHAPBHAO,JIAOYIRQ,JIAOYIJE,JIAOYBIZ,NBJOYIMA,QDAOLEIX,JIEDAIBZ
+				  from dwh.D_CBS_KDPL_ZHMINX
+				  where  CHONGZBZ=''0'' and BCHONGBZ=''0'' and JILUZTAI=''0'' and SUOSHUDX in (''1'',''2'') and KEHUZHLX in (''0'',''1'',''2'',''3'',''4'',''5'') and JIAOYIJE>=0  and ZHANGHYE>=0
+				  and JIAOYIRQ>'''||DATA_MONTH_1||'''  and JIAOYIRQ<='''||data_dt||''' )a1
+			 left join
+		idss.temp_first_ckzh a2 on a1.ZHANGHAO=a2.ledger_acct_no';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 8;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 8,poc_steptotal_time ;
+
+
+	--	select timeofday()::timestamp into poc_stepstart_time;
+    --   strSQL := 'drop table if exists idss.temp_ls_new_all_old';
+    --   raise info '%', strSQL;
+    --   execute strSQL;
+    --
+    --   GET DIAGNOSTICS rowcount = ROW_COUNT;
+    --   raise info 'step % succ', 9;
+    --   raise info '%', rowcount;
+    --   select timeofday()::timestamp into poc_stepend_time;
+    --   poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+    --   raise info 'step % time %', 9,poc_steptotal_time ;
+	--
+	--
+	--	select timeofday()::timestamp into poc_stepstart_time;
+    --   strSQL := 'create table idss.temp_ls_new_all_old as
+	--	select * from idss.temp_ls_new_all_new
+	--	where trade_date>='''||DATA_MONTH_24||'''';
+    --   raise info '%', strSQL;
+    --   execute strSQL;
+    --
+    --   GET DIAGNOSTICS rowcount = ROW_COUNT;
+    --   raise info 'step % succ', 10;
+    --   raise info '%', rowcount;
+    --   select timeofday()::timestamp into poc_stepend_time;
+    --   poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+    --   raise info 'step % time %', 10,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.temp_ls_new_all_new';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 11;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 11,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.temp_ls_new_all_new as
+		select * from idss.temp_ls_new_1mon
+		where df_acct_tz<>''NXT'' and acct_name <> df_acct_name
+		union
+		select * from idss.temp_ls_new_1mon
+		where df_acct_tz<>''NXT'' and df_acct_name is null
+		union all
+
+		select a0.* from
+				 (select * from idss.temp_ls_new_1mon
+				  where df_acct_tz=''NXT'' and acct_name <> df_acct_name
+				 )a0
+		inner join
+			(select a1.cust_no,a1.months from
+                 (select cust_no,substr(trade_date,1,6) as months,count(1) as sum_nxt
+				  from  idss.temp_ls_new_1mon
+				  where df_acct_tz=''NXT'' and acct_name <> df_acct_name
+				  group by cust_no,substr(trade_date,1,6)
+				 )a1
+		   where a1.sum_nxt>5
+		  )a2
+		on a0.cust_no=a2.cust_no and substr(a0.trade_date,1,6)=a2.months';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 12;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 12,poc_steptotal_time ;
+
+
+	--	select timeofday()::timestamp into poc_stepstart_time;
+    --   strSQL := 'TRUNCATE TABLE  idss.temp_ls_new_all_new';
+    --   raise info '%', strSQL;
+    --   execute strSQL;
+    --
+    --   GET DIAGNOSTICS rowcount = ROW_COUNT;
+    --   raise info 'step % succ', 13;
+    --   raise info '%', rowcount;
+    --   select timeofday()::timestamp into poc_stepend_time;
+    --   poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+    --   raise info 'step % time %', 13,poc_steptotal_time ;
+
+
+	--	select timeofday()::timestamp into poc_stepstart_time;
+    --   strSQL := 'insert into idss.temp_ls_new_all_new
+	--	select * from idss.temp_ls_new_1mon_new
+	--	union all
+	--	select * from idss.temp_ls_new_all_old';
+    --   raise info '%', strSQL;
+    --   execute strSQL;
+    --
+    --   GET DIAGNOSTICS rowcount = ROW_COUNT;
+    --   raise info 'step % succ', 14;
+    --   raise info '%', rowcount;
+    --   select timeofday()::timestamp into poc_stepend_time;
+    --   poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+    --   raise info 'step % time %', 14,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.ls_24mon';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 15;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 15,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.ls_24mon as
+		select *,
+		(case when cred_sign in (''1'',''C'') then ''1'' else ''0'' end) as Liuru,
+		(case when cred_sign in (''0'',''D'') then ''1'' else ''0'' end) as Liucchu
+		from idss.temp_ls_new_all_new where trade_cod IN (''ib1702'',''dp2121'',''dp2891'',''ib1659'',''dp2120'',''ib1701'',''ib53'',''ibw25'',''ib71'',''dp2199'',''dp2123'',''dp21'',''ib1771'',''ib1240'',''ib1243'',''ta7562'',''ta7563'',''ln3049'',''it6050'',''dp2101'',''dp15'',''dp2134'',''dp2106'',''dp10'',''dp19'',''dp16'',''dp2107'',''dp2109'',''ib1254'',''ib1777'',''280080'',''280030'',''554220'',''535004'',''535800'',''801001'',''592910'',''592908'',''593911'',''593910'',''593909'',''593908'',''556957'',''591220'',''556907'',''592902'',''592911'',''592909'',''592904'',''592914'',''530001'',''591210'',''535012'',''535060'',''554210'',''594911'',''594909'',''570002'',''591123'',''592901'',''852284'',''852285'',''280090'',''dps220'',''dps215'',''280020'',''gls401'',''271010'',''805028'',''801023'',''801024'',''410113'',''805051'',''272010'',''801031'',''801009'',''556906'',''591410'',''171411'',''809001'',''801041'',''801045'',''801048'',''802002'',''802010'',''410018'',''410100'',''805020'',''805021'',''805023'',''805025'',''805057'',''805056'',''805055'',''801051'',''840009'',''801055'',''840002'',''280010'',''273030'',''279100'',''272020'',''852267'',''810007'',''410023'',''410020'',''852269'',''274030'',''122550'',''810006'',''279200'',''271020'',''279300'',''mps404'',''552055'',''410019'',''851008'',''851007''
+		)';
+        raise info '%', strSQL;
+        execute strSQL;
+
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 16;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 16,poc_steptotal_time ;
+
+
+
+
+		-----------------------------------
+
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.ls_month_01';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 17;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 17,poc_steptotal_time ;
+
+
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.ls_month_01 as
+select Liuru,Liucchu,cust_no,substr(trade_date,1,6) as trade_date,sum((case when trade_amt is null then ''0''::float
+ when trade_amt<=0      then ''0''::float
+ else trade_amt::float  end
+ ) ) as money_money from idss.ls_24mon group by Liuru,Liucchu,cust_no,substr(trade_date,1,6)';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 18;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 18,poc_steptotal_time ;
+
+
+				select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'truncate table idss.ls_month_all' ;
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 19;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 19,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'insert into idss.ls_month_all
+		select * from idss.ls_month where trade_date>substr(''20210331'',1,6) and trade_date<substr(''20230331'',1,6)
+		union all
+		select * from idss.ls_month_01' ;
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 20;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 20,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.ls_month';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 21;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 21,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.ls_month as select * from idss.ls_month_all';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 22;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 22,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.result_24mon_sumlc';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 23;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 23,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.result_24mon_sumlc as
+		select a.cust_no,
+			   (case when b.money_money is null then ''0''
+					 when b.money_money<=0      then ''0''
+					 else b.money_money  end
+					 ) as money_money
+		from (select cust_no from idss.temp_first_ckzh group by cust_no)a
+		left join
+		(select cust_no,sum(money_money) as money_money from idss.ls_month_all where  Liucchu=''1'' group by cust_no)b on a.cust_no=b.cust_no';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 24;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 24,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.result_24mon_sumlr';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 25;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 25,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.result_24mon_sumlr as
+		select a.cust_no,
+			   (case when b.money_money is null then ''0''
+					 when b.money_money<=0      then ''0''
+					 else b.money_money  end
+					 ) as money_money
+		from (select cust_no from idss.temp_first_ckzh group by cust_no)a
+		left join
+		(select cust_no,sum(money_money) as money_money from idss.ls_month_all where Liuru=''1'' group by cust_no)b on a.cust_no=b.cust_no';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 26;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 26,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.lcandlr';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 27;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 27,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.lcandlr as
+		select a.cust_no,a.money_money as lc,b.money_money as lr from idss.result_24mon_sumlc a
+		left join  idss.result_24mon_sumlr b on a.cust_no=b.cust_no';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 28;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 28,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.dfgz_01_01';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 29;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 29,poc_steptotal_time ;
+
+		--需要进行更改，数据库中应该只存一个月的数据，铺一个铺底表
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.dfgz_01_01 as
+		select pkrq,yhh1,yhzh,yhxm,jyje from dwh.d_ifs_batch_pldsf_ywty
+		where partition_dt >''20230228'' and pkrq<>''''   and partition_dt <=''20230331''
+		and trim(ywbh) in (select ywbh from dwh.d_ifs_app_dwcpxy where partition_dt=''20230331'' and ((ywmc like ''%工资%'') or (ywmc like ''%绩效%'') or (ywmc like ''%奖金%'')))
+		and cgbz=''0''';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 30;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 30,poc_steptotal_time ;
+
+				select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'truncate table idss.dfgz_01_all';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 31;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 31,poc_steptotal_time ;
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'insert into idss.dfgz_01_all
+		select * from idss.dfgz_01_01
+		union all
+		select * from idss.dfgz_01 where pkrq <= ''20230228''';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 32;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 32,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.dfgz_01';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 33;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 33,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table dfgz_01 as select * from idss.dfgz_01_all';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 34;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 34,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.dfgz_02';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 35;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 35,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.dfgz_02 as
+select yhzh,sum( (case when jyje = '''' then null else jyje end)::float) as jyje,substr(pkrq,1,6) as pkrq from idss.dfgz_01
+group by yhzh,substr(pkrq,1,6)';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 36;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 36,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.dfgz_03';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 37;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 37,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.dfgz_03 as
+		select a.yhzh,b.cust_no,a.jyje,a.pkrq
+		from idss.dfgz_02 a
+		left join (select cust_no,cust_acc_no from dwh.M_CRN_ACC_INF_TBL where partition_dt=''20230331'' group by cust_no,cust_acc_no)b
+		on a.yhzh=b.cust_acc_no';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 38;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 38,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.temp_ls_dfgz_01';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 39;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 39,poc_steptotal_time ;
+
+		--dwh.D_CBS_KDPL_ZHMINX 只存一个月的数据
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.temp_ls_dfgz_01 as
+		select a1.ZHANGHAO,
+       a2.cust_no,
+       substr(a1.JIAOYIRQ,1,6) as pkrq,
+       a1.JIAOYIJE as jyje
+	   from(
+          select ZHANGHAO,JIAOYIRQ,JIAOYIJE,NBJOYIMA,JIEDAIBZ,zhaiyoms
+          from dwh.D_CBS_KDPL_ZHMINX
+		  where  JIAOYIRQ>''20230228'' and ((zhaiyoms like ''%工资%'') or (zhaiyoms like ''%绩效%'') or (zhaiyoms like ''%奖金%'')) and NBJOYIMA=''ib53'' and JIEDAIBZ=''1''
+          )a1
+		left join
+		idss.temp_first_ckzh a2 on a1.ZHANGHAO=a2.ledger_acct_no';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 40;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 40,poc_steptotal_time ;
+
+
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'truncate table idss.temp_ls_dfgz_all';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 41;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 41,poc_steptotal_time ;
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'insert into idss.temp_ls_dfgz_all
+select * from idss.temp_ls_dfgz_01
+union all
+select zhanghao,cust_no,pkrq,jyje::numeric(16,2) from idss.temp_ls_dfgz where pkrq <= ''20230228''';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 42;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 42,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.temp_ls_dfgz';
+        raise info '%', strSQL;
+        execute strSQL;
+		GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 43;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 43,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table temp_ls_dfgz as select * from idss.temp_ls_dfgz_all';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 44;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 44,poc_steptotal_time ;
+
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.dfgz_04';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 45;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 45,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.dfgz_04 as
+		select a1.cust_no,
+        sum(jyje) as jyje,
+        a1.pkrq
+		from idss.temp_ls_dfgz a1 where a1.pkrq<=substr(''20230331'',1,6)
+		group by a1.cust_no,a1.pkrq';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 46;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 46,poc_steptotal_time ;
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.dfgz_05';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 47;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 47,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.dfgz_05 as
+		select a.cust_no,a.pkrq,a.jyje
+		from idss.dfgz_03 a
+		union all
+		select a0.cust_no,a0.pkrq,a0.jyje from
+		(
+		select b.cust_no,b.pkrq,b.jyje,
+		(case when c.yess is null then ''1'' else ''0'' end)as yess
+		from idss.dfgz_04 b
+		left join (select cust_no,''1'' as yess from idss.dfgz_03)c on b.cust_no=c.cust_no
+		)a0
+		where a0.yess=''1''';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 48;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 48,poc_steptotal_time ;
+		---------------------------------------------------------------------------------
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.temp_tb_all_1_01';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 49;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 49,poc_steptotal_time ;
+
+		--dwh.D_CBS_KDPL_ZHMINX 只存一个月的数据
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.temp_tb_all_1_01 as
+select ZHANGHAO,JIAOYIRQ,JIAOYIJE,NBJOYIMA,JIEDAIBZ,zhaiyoms,duifkhzh
+from dwh.D_cbs_KDPL_ZHMINX
+where   ((zhaiyoms like ''%工资%'') or (zhaiyoms like ''代发''))
+and NBJOYIMA=''ib53'' and JIEDAIBZ=''1'' and JIAOYIRQ >''20210331'' and  JIAOYIRQ <=''20230331''';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 50;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 50,poc_steptotal_time ;
+
+
+
+			select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'truncate table idss.temp_tb_all_1_all';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 51;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 51,poc_steptotal_time ;
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'insert into idss.temp_tb_all_1_all
+select * from idss.temp_tb_all_1_01
+union all
+select zhanghao,jiaoyirq,jiaoyije::numeric(17,2),nbjoyima,jiedaibz,zhaiyoms,duifkhzh from idss.temp_tb_all_1 where jiaoyirq <= ''20230228''';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 52;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 52,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.temp_tb_all_1';
+        raise info '%', strSQL;
+        execute strSQL;
+
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 53;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 53,poc_steptotal_time ;
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table temp_tb_all_1 as select * from idss.temp_tb_all_1_all';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 54;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 54,poc_steptotal_time ;
+
+
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.tmp_daifa_12_1m';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 55;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 55,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.tmp_daifa_12_1m  as
+               select ZHANGHAO,DUIFKHZH ,substr(JIAOYIRQ,1,6)	as JIAOYIRQ
+               FROM idss.temp_tb_all_1
+               WHERE JIAOYIRQ>''20220331'' and JIAOYIRQ<=''20230131''
+               and (zhaiyoms like ''代发'' or zhaiyoms like ''%工资%'')
+               group by ZHANGHAO,DUIFKHZH,substr(JIAOYIRQ,1,6)';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 56;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 56,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := ' drop table if exists idss.tmp_daifa_12_1m_1';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 57;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 57,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.tmp_daifa_12_1m_1  as
+               select ZHANGHAO,DUIFKHZH   FROM   idss.tmp_daifa_12_1m
+               group by ZHANGHAO,DUIFKHZH having count(1)=10';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 58;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 58,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.tmp_daifa_3M_1';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 59;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 59,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := ' create table idss.tmp_daifa_3M_1 as
+
+               select ZHANGHAO,DUIFKHZH,substr(JIAOYIRQ,1,6) as JIAOYIRQ,max(jiaoyije) as jiaoyije
+
+               from idss.temp_tb_all_1 a
+               where JIAOYIRQ> ''20230131'' and JIAOYIRQ <=''20230331''
+		and zhaiyoms like ''%工资%''
+               group by ZHANGHAO,DUIFKHZH,substr(JIAOYIRQ,1,6)';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 60;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 60,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table  if exists idss.tmp_daifa_3M_1_1';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 61;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 61,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.tmp_daifa_3M_1_1 as
+               select ZHANGHAO,DUIFKHZH
+               from idss.tmp_daifa_3M_1 a
+               group by ZHANGHAO,DUIFKHZH having count(1)=2';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 62;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 62,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table  if exists idss.tmp_daifa_3M_12_1_all';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 63;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 63,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.tmp_daifa_3M_12_1_all as
+select a.ZHANGHAO,a.DUIFKHZH ,b.ZHANGHAO as ZHANGHAO1 from idss.tmp_daifa_12_1m_1 a left join idss.tmp_daifa_3M_1_1 b on a.ZHANGHAO=b.ZHANGHAO and a.DUIFKHZH=b.DUIFKHZH';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 64;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 64,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.tmp_daifa_3M_1_3';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 65;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 65,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.tmp_daifa_3M_1_3 as
+select a.ZHANGHAO,b.jiaoyije-1000 as down_jyje,b.jiaoyije+1000 as up_jyje,b.jiaoyije,a.DUIFKHZH
+from idss.tmp_daifa_3M_12_1_all a left join idss.tmp_daifa_3M_1 b
+on  a.ZHANGHAO=b.ZHANGHAO and a.DUIFKHZH=b.DUIFKHZH
+where b.JIAOYIRQ=''202303'' and a.ZHANGHAO1 is not null';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 66;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 66,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.temp_shaixuan_2';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 67;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 67,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.temp_shaixuan_2 as
+select a.ZHANGHAO,a.DUIFKHZH,max(b.jiaoyije) jiaoyije,substr(b.JIAOYIRQ,1,6) JIAOYIRQ from  idss.tmp_daifa_3M_1_3 a left join idss.temp_tb_all_1 b on  a.ZHANGHAO=b.ZHANGHAO and a.DUIFKHZH=b.DUIFKHZH
+where b.jiaoyije::float>=down_jyje and b.jiaoyije::float<=up_jyje  group by a.ZHANGHAO,a.DUIFKHZH,substr(b.JIAOYIRQ,1,6)';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 68;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 68,poc_steptotal_time ;
+
+
+				select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.cust_no_1';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 69;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 69,poc_steptotal_time ;
+
+
+				select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.cust_no_1 as
+select b.cust_no,a.JIAOYIRQ,a.jiaoyije
+from idss.temp_shaixuan_2 a
+left join (select cust_no,cust_acc_no from dwh.M_CRN_ACC_INF_TBL where partition_dt=''20230331'' group by cust_no,cust_acc_no)b
+on a.ZHANGHAO=b.cust_acc_no';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 70;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 70,poc_steptotal_time ;
+
+		--铺地数据
+				select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.temp_tb_all_2_01';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 71;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 71,poc_steptotal_time ;
+
+
+				select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table  idss.temp_tb_all_2_01 as
+select a.pkrq,a.yhh1,a.yhzh,a.yhxm,jyje,b.dfzh,ywmc
+from dwh.d_ifs_batch_pldsf_ywty a
+left join
+(select * from dwh.d_ifs_app_dwcpxy
+where partition_dt=''20230331''
+and (ywmc like ''代发'' or ywmc like ''%工资%'')) b
+on trim(a.ywbh)=b.ywbh
+where pkrq<>'''' and a.cgbz=''0'' and pkrq >''20230228'' and  pkrq <=''20230331''';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 72;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 72,poc_steptotal_time ;
+
+
+
+			select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'truncate table idss.temp_tb_all_2_all';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 73;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 73,poc_steptotal_time ;
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'insert into idss.temp_tb_all_2_all
+select * from idss.temp_tb_all_2_01
+union all
+select pkrq,yhh1,yhzh,yhxm,jyje::numeric(16,2),dfzh,ywmc from idss.temp_tb_all_2 where pkrq <= ''20230228''';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 74;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 74,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.temp_tb_all_2';
+        raise info '%', strSQL;
+        execute strSQL;
+		GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 75;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 75,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table temp_tb_all_2 as select * from idss.temp_tb_all_2_all';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 76;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 76,poc_steptotal_time ;
+
+
+				select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.tmp_daifa_12_2m';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 77;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 77,poc_steptotal_time ;
+
+
+				select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.tmp_daifa_12_2m  as
+               select yhzh,dfzh ,substr(pkrq,1,6) as pkrq
+               --取出10个月的代发工资
+               FROM  idss.temp_tb_all_2	  WHERE pkrq>''20220331'' and pkrq<=''20230131''  and (ywmc like ''代发'' or ywmc like ''%工资%'')
+               group by yhzh,dfzh,substr(pkrq,1,6)';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 78;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 78,poc_steptotal_time ;
+
+
+				select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := ' drop table if exists idss.tmp_daifa_12_2m_2';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 79;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 79,poc_steptotal_time ;
+
+
+				select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.tmp_daifa_12_2m_2  as
+               select yhzh,dfzh   FROM   idss.tmp_daifa_12_2m
+               group by yhzh,dfzh having count(1)=10 ';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 80;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 80,poc_steptotal_time ;
+
+
+				select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table  if exists idss.tmp_daifa_3M_2';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 81;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 81,poc_steptotal_time ;
+
+
+				select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.tmp_daifa_3M_2 as
+               select yhzh,dfzh,substr(pkrq,1,6) as pkrq ,max(jyje) as jyje
+               from idss.temp_tb_all_2 a
+               where pkrq> ''20230131'' and pkrq <=''20230331''	 and ywmc like ''%工资%''
+               group by yhzh,dfzh,substr(pkrq,1,6)';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 82;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 82,poc_steptotal_time ;
+
+
+				select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table  if exists idss.tmp_daifa_3M_2_2';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 83;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 83,poc_steptotal_time ;
+
+
+				select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.tmp_daifa_3M_2_2 as
+               select yhzh,dfzh
+               from idss.tmp_daifa_3M_2 a
+               group by yhzh,dfzh having count(1)=2';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 84;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 84,poc_steptotal_time ;
+
+
+				select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table  if exists idss.tmp_daifa_3M_12_2_all';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 85;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 85,poc_steptotal_time ;
+
+
+					select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.tmp_daifa_3M_12_2_all as
+select a.yhzh,a.dfzh ,b.yhzh as yhzh1 from idss.tmp_daifa_12_2m_2 a left join idss.tmp_daifa_3M_2_2 b on a.yhzh=b.yhzh and a.dfzh=b.dfzh';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 86;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 86,poc_steptotal_time ;
+
+
+						select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.tmp_daifa_3M_2_3';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 87;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 87,poc_steptotal_time ;
+
+
+						select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.tmp_daifa_3M_2_3 as
+select a.yhzh,
+b.jyje-1000 as down_jyje, b.jyje+1000  as up_jyje,b.jyje,a.dfzh
+from idss.tmp_daifa_3M_12_2_all a left join idss.tmp_daifa_3M_2 b
+on  a.yhzh=b.yhzh and a.dfzh=b.dfzh
+where b.pkrq=''202303'' and a.yhzh is not null';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 88;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 88,poc_steptotal_time ;
+
+
+						select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.temp_shaixuan';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 89;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 89,poc_steptotal_time ;
+
+
+						select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.temp_shaixuan as
+select a.yhzh,a.dfzh,max(b.jyje) jyje,substr(b.pkrq,1,6) pkrq from  idss.tmp_daifa_3M_2_3 a left join idss.temp_tb_all_2 b on  a.yhzh=b.yhzh and a.dfzh=b.dfzh
+where b.jyje::float>=down_jyje and b.jyje::float<=up_jyje  group by a.yhzh,a.dfzh,substr(b.pkrq,1,6)';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 90;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 90,poc_steptotal_time ;
+
+
+						select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.cust_no_2';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 91;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 91,poc_steptotal_time ;
+
+
+						select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.cust_no_2 as
+select b.cust_no,a.pkrq,a.jyje
+from idss.temp_shaixuan a
+left join (select cust_no,cust_acc_no from dwh.M_CRN_ACC_INF_TBL where partition_dt=''20230331'' group by cust_no,cust_acc_no)b
+on a.yhzh=b.cust_acc_no';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 92;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 92,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table idss.cust_no';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 93;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 93,poc_steptotal_time ;
+
+
+
+						select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.cust_no as select * from (	select * from idss.cust_no_1 b
+union all
+select * from (select cust_no,pkrq as JIAOYIRQ,jyje as jiaoyije from idss.cust_no_2) a) c';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 94;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 94,poc_steptotal_time ;
+
+
+
+		------------------------------------------------------------------------------------
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.xn_01_01';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 95;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 95,poc_steptotal_time ;
+		--铺地数据
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.xn_01_01 as
+select pkrq,yhh1,yhzh,yhxm,jyje from dwh.d_ifs_batch_pldsf_ywty
+where partition_dt=''20230331'' and pkrq<>''''
+and trim(ywbh) in (select ywbh from dwh.d_ifs_app_dwcpxy where partition_dt=''20230331'' and (ywmc like ''代扣'')) and yhzh like ''621449083%''
+and cgbz=''0''';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 96;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 96,poc_steptotal_time ;
+
+
+				select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'truncate table idss.xn_01_all';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 97;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 97,poc_steptotal_time ;
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'insert into idss.xn_01_all
+		select * from idss.xn_01_01
+		union all
+		select * from idss.xn_01 where pkrq <= ''20230228''';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 98;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 98,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.xn_01';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 99;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 99,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table xn_01 as select * from idss.xn_01_all';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 100;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 100,poc_steptotal_time ;
+
+
+								select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.xn_02';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 101;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 101,poc_steptotal_time ;
+
+								select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.xn_02 as
+select yhzh,sum(jyje) as jyje,substr(pkrq,1,6) as pkrq from idss.xn_01
+group by yhzh,substr(pkrq,1,6)';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 102;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 102,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.xn_03';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 103;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 103,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.xn_03 as
+select a.yhzh,b.cust_no,a.jyje,a.pkrq
+from idss.xn_02 a
+left join (select cust_no,cust_acc_no from dwh.M_CRN_ACC_INF_TBL where partition_dt=''20230331'' group by cust_no,cust_acc_no)b
+on a.yhzh=b.cust_acc_no';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 104;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 104,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.temp_ls_xn_01';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 105;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 105,poc_steptotal_time ;
+
+
+		--铺地数据
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.temp_ls_xn_01 as
+select a1.ZHANGHAO,
+       a2.cust_no,
+       substr(a1.JIAOYIRQ,1,6) as pkrq,
+       a1.JIAOYIJE as jyje
+from     (
+          select ZHANGHAO,JIAOYIRQ,JIAOYIJE,NBJOYIMA,JIEDAIBZ,zhaiyoms
+          from dwh.D_cbs_KDPL_ZHMINX
+		  where  JIAOYIRQ>''20230228'' and (zhaiyoms like ''代扣'')  and JIAOYIRQ<=''20230331''   and  kehuzhao like ''621449083%''
+          )a1
+left join
+idss.temp_first_ckzh a2 on a1.ZHANGHAO=a2.ledger_acct_no';
+        raise info '%', strSQL;
+        execute strSQL;
+
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 106;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 106,poc_steptotal_time ;
+
+					select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'truncate table idss.temp_ls_xn_all';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 107;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 107,poc_steptotal_time ;
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'insert into idss.temp_ls_xn_all
+select * from idss.temp_ls_xn_01
+union all
+select zhanghao,cust_no,pkrq,jyje::numeric(17,2) from idss.temp_ls_xn where pkrq <= ''20230228''';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 108;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 108,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.temp_ls_xn';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 109;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 109,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.temp_ls_xn as select * from idss.temp_ls_xn_all';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 110;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 110,poc_steptotal_time ;
+
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.xn_04';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 111;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 111,poc_steptotal_time ;
+
+
+								select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.xn_04 as
+select a1.cust_no,
+       sum(a1.jyje) as jyje,
+       a1.pkrq
+from idss.temp_ls_xn a1 where a1.pkrq<=substr(''20230331'',1,6)
+group by a1.cust_no,a1.pkrq';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 112;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 112,poc_steptotal_time ;
+
+
+								select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.xn_05';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 113;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 113,poc_steptotal_time ;
+
+
+								select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.xn_05 as
+select a.cust_no,a.pkrq,a.jyje
+from idss.xn_03 a
+union all
+select a0.cust_no,a0.pkrq,a0.jyje from
+(
+select b.cust_no,b.pkrq,b.jyje,
+(case when c.yess is null then ''1'' else ''0'' end)as yess
+from idss.xn_04 b
+left join (select cust_no,''1'' as yess from idss.xn_03)c on b.cust_no=c.cust_no
+)a0
+where a0.yess=''1''';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 114;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 114,poc_steptotal_time ;
+
+
+								select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'drop table if exists idss.uc01';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 115;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 115,poc_steptotal_time ;
+
+
+		select timeofday()::timestamp into poc_stepstart_time;
+        strSQL := 'create table idss.uc01 as
+select ZHANGHAO,KEHUHAOO,kaihjine,ZHHUZTAI,SCCRRIQI
+from dwh.D_cbs_KDPA_ZHXINX
+where  SUOSHUDX=''1'' and partition_dt=''20230331'' and CUNKZLEI in (''25'',''26'',''27'',''30'',''31'',''34'',''35'',''40'',''61'',''65'')
+and ZHHUZTAI=''A'' and FZCPLEIX=''1'' and  SCCRRIQI <=''20230331''';
+        raise info '%', strSQL;
+        execute strSQL;
+
+        GET DIAGNOSTICS rowcount = ROW_COUNT;
+        raise info 'step % succ', 116;
+        raise info '%', rowcount;
+        select timeofday()::timestamp into poc_stepend_time;
+        poc_steptotal_time:=poc_stepend_time-poc_stepstart_time;
+        raise info 'step % time %', 116,poc_steptotal_time ;
+
+		return 0;
+/*
+	exception
+	when others then
+
+	raise warning '%', sqlerrm;
+	raise warning '%', 'TASK FAILED!!!';
+	select timeofday()::timestamp into poc_run_end_time;
+	poc_total_time:=poc_run_end_time-poc_run_start_time;
+	raise info 'total time %', poc_total_time;
+
+	return 1;
+*/
+end;
+$$ LANGUAGE plpgsql;
+
